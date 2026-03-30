@@ -21,12 +21,85 @@ Hybrid voice and text driven deployment flow planner with clarification question
 6. similar historical plan examples can influence the final group and task layout
 7. dependency validation ensures the returned plan is consistent
 
+## High-Level Architecture
+
+```mermaid
+flowchart TD
+    userInput[UserInput]
+    asr[SpeechToText]
+    intentLayer[IntentAndEntityLayer]
+    clarification[ClarificationLoop]
+    retrieval[RetrievalArtifacts]
+    planner[HybridPlanGenerator]
+    validator[SchemaAndDagValidation]
+    mockApi[MockExecutionApis]
+    reco[RecommendationEngine]
+    finalOutput[StructuredPlanOutput]
+
+    userInput --> asr
+    userInput --> intentLayer
+    asr --> intentLayer
+    intentLayer --> clarification
+    intentLayer --> retrieval
+    clarification --> planner
+    retrieval --> planner
+    planner --> validator
+    validator --> mockApi
+    validator --> reco
+    mockApi --> reco
+    reco --> finalOutput
+```
+
 ## Current Version
 Version `0.2.0` introduces a hybrid planning flow:
 - deterministic templates remain as a safe fallback
 - trained intent artifacts can be loaded at runtime
 - retrieval artifacts can shape plan strategies and recommendations
 - multi-turn clarification is supported through planning sessions
+
+## Stack And Tools
+
+### Core language
+- `Python`
+
+### Backend and API
+- `FastAPI` for API routes and OpenAPI docs
+- `Pydantic` for request, response, plan, and session schemas
+
+### AI / ML and training
+- `scikit-learn` for the current TF-IDF + Logistic Regression intent baseline
+- `PyTorch` planned for future custom model training and fine-tuning
+- `transformers` planned for richer NLP models
+- `sentence-transformers` planned for stronger semantic retrieval
+- `MLflow` for experiment tracking and artifact logging
+
+### NLP and speech
+- rule-based entity extraction in the current version
+- `faster-whisper` for speech-to-text
+- `Vosk` as an optional fallback ASR backend
+- `spaCy` planned for richer entity extraction and normalization
+
+### Planning and validation
+- `NetworkX` for dependency graph validation and topological ordering
+- deterministic fallback templates plus retrieval-guided plan shaping
+
+### Recommendation and retrieval
+- TF-IDF retrieval artifacts for similar plan and failure lookup
+- troubleshooting knowledge base in markdown
+- `FAISS` or `Chroma` planned for future vector retrieval
+
+### Testing and development
+- `pytest` for tests
+- `httpx` for API testing
+- `respx` available for HTTP mocking patterns
+- `pip` for package management
+- `Git` for version control
+
+### Project artifacts and data
+- `data/training/` stores source datasets
+- `artifacts/intent/` stores trained intent artifacts
+- `artifacts/recommendations/` stores trained retrieval artifacts
+- `outputs/` stores quick-run API results
 
 ## Quick Start
 Install dependencies:
