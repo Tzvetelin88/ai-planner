@@ -1,20 +1,22 @@
 # Training Guide
 
-This document explains how training works in `AI Deployment Planner`, what data is used, where outputs are stored, how those outputs relate to the API, and how the current logic helps improve planning quality.
+This document explains how training works in `AI Deployment Planner`, what data is used, where outputs are stored, how runtime now reuses those outputs, and how to build better datasets for dynamic planning.
 
 ## Overview
-The project currently has two training-related parts:
-- an intent classifier baseline
-- a recommendation and retrieval baseline
+The current training setup has three data layers:
+- intent training data
+- plan and failure retrieval data
+- clarification examples for future learning and evaluation
 
-These training jobs are designed to prove the ML pipeline and create reusable artifacts for later improvement.
+The current runtime is a hybrid system:
+- trained intent artifacts can be loaded at startup
+- retrieval artifacts can shape plans and recommendations
+- clarification data is currently a dataset foundation and reference, not a fully trained model
 
 ## 1. Intent Model Training
 
 ### Purpose
-The intent model learns how to classify a user request into one of the supported deployment-planning intents.
-
-Examples:
+The intent model learns to classify a request into one of the supported planning intents:
 - create deployment plan
 - update configuration plan
 - rollback plan
@@ -22,283 +24,210 @@ Examples:
 - validation and health-check plan
 
 ### Input Data
-The input dataset is:
+Primary dataset:
 - `data/training/intents.jsonl`
 
-Each line contains:
-- `text` - the user request
-- `intent` - the target label
-- `entities` - optional structured deployment details
-
-Example records:
-
-```json
-{"text":"Create a staging deployment plan for a 3-node Kubernetes cluster with monitoring and backup enabled.","intent":"create_deployment_plan","entities":{"environment":"staging","target_platform":"kubernetes","region":null,"cluster_size":3,"monitoring_enabled":true,"backup_enabled":true,"rollback_required":true,"compliance_requirements":[],"constraints":[],"integrations":["monitoring","backup"]}}
-{"text":"Generate a disaster recovery failover plan for our secondary region with health checks.","intent":"disaster_recovery_plan","entities":{"environment":"dr","target_platform":"generic-platform","region":"secondary-region","cluster_size":1,"monitoring_enabled":false,"backup_enabled":false,"rollback_required":true,"compliance_requirements":[],"constraints":[],"integrations":[]}}
-```
+Each row contains:
+- `text`
+- `intent`
+- optional `entities`
+- optional clarification metadata such as `needs_clarification`, `ambiguity_tags`, and `missing_fields`
 
 ### Current Training Logic
-The baseline classifier is implemented in `src/nlp/intent_model.py`.
-
-It currently uses:
-- `scikit-learn`
+The baseline classifier in `src/nlp/intent_model.py` uses:
 - `TfidfVectorizer`
 - `LogisticRegression`
 
 Training flow:
-1. Read all labeled rows from `data/training/intents.jsonl`
-2. Extract the input text and target intent labels
-3. Convert text into TF-IDF features
-4. Train a logistic regression classifier
-5. Report basic training metrics
-
-Relevant code:
-
-```python
-texts = [sample.text for sample in samples]
-labels = [sample.intent.value for sample in samples]
-features = self.vectorizer.fit_transform(texts)
-self.model.fit(features, labels)
-```
+1. load `intents.jsonl`
+2. convert input text into TF-IDF vectors
+3. train the classifier
+4. save metrics and model artifact
 
 ### Training Script
-Run with:
 
 ```bash
 python training/train_intent_model.py
 ```
 
-The script:
-- loads the dataset
-- trains the classifier
-- writes metrics
-- writes metadata
-- optionally logs to MLflow if MLflow is installed
-
 ### Output Files
-Generated output:
 - `artifacts/intent/metrics.json`
 - `artifacts/intent/metadata.json`
+- `artifacts/intent/model.pkl`
 
-Example meaning:
-- `metrics.json` contains training accuracy and sample count
-- `metadata.json` currently stores whether the model was trained in that run
+### Runtime Use
+The API now attempts to load `artifacts/intent/model.pkl` at startup. If the artifact is not available, the project falls back to heuristic intent detection.
 
-## 2. Recommendation / Retrieval Training
+## 2. Recommendation And Retrieval Training
 
 ### Purpose
-This training step creates a basic retrieval layer that can help connect:
-- new deployment requests to similar known plans
-- failure scenarios to similar known issues
-- future recommendations to previous examples
+This training step creates a retrieval artifact that helps the runtime:
+- find similar known plan strategies
+- reuse plan groups from similar examples
+- reuse known risks from related plans
+- suggest remediation based on similar failures
 
 ### Input Data
-The recommendation baseline uses two datasets:
+Datasets:
 - `data/training/plans.jsonl`
 - `data/training/failures.jsonl`
 
-#### Plans dataset
-Contains:
+Plan records now support fields such as:
 - `prompt`
 - `plan_summary`
 - `groups`
 - `known_risks`
+- `rollout_strategy`
+- `dependency_pattern`
+- `clarification_hints`
 
-Example:
-
-```json
-{"prompt":"Create a production deployment plan for a 5-node Kubernetes cluster with monitoring, backup, and rollback.","plan_summary":"Production Kubernetes rollout with prechecks, infra provisioning, platform configuration, protection controls, verification, and rollback steps.","groups":["pre_validation","infrastructure_setup","platform_configuration","security_and_backup","verification","rollback"],"known_risks":["production_change_window","backup_validation_needed","monitoring_dashboard_gap"]}
-```
-
-#### Failures dataset
-Contains:
+Failure records now support fields such as:
 - `issue`
 - `root_cause`
 - `fix`
 - `follow_up`
-
-Example:
-
-```json
-{"issue":"Backup registration timed out during provisioning.","root_cause":"Backup service endpoint was unreachable from the target network.","fix":"Validate network path to the backup controller, then rerun backup enablement.","follow_up":"Add a precheck for backup service connectivity before provisioning."}
-```
+- `remediation_category`
+- `plan_context`
 
 ### Current Training Logic
-The baseline retrieval model is implemented in `training/train_recommendation_model.py`.
-
-It currently:
-1. loads plan prompts and failure issue text
-2. merges them into a single text corpus
-3. vectorizes them with TF-IDF
-4. computes similarity scores
-5. saves a retrieval artifact
-
-Current approach:
-- `TfidfVectorizer`
-- cosine similarity
-
-Relevant code:
-
-```python
-plan_records = _load_jsonl(args.plans)
-failure_records = _load_jsonl(args.failures)
-corpus = [record["prompt"] for record in plan_records] + [record["issue"] for record in failure_records]
-
-vectorizer = TfidfVectorizer(ngram_range=(1, 2))
-matrix = vectorizer.fit_transform(corpus)
-similarities = cosine_similarity(matrix, matrix)
-```
+The retrieval trainer in `training/train_recommendation_model.py`:
+1. loads plan and failure records
+2. converts them into structured retrieval documents
+3. builds TF-IDF vectors
+4. saves a retrieval artifact containing both the vectorizer and the documents
 
 ### Training Script
-Run with:
 
 ```bash
 python training/train_recommendation_model.py
 ```
 
 ### Output Files
-Generated output:
 - `artifacts/recommendations/metrics.json`
 - `artifacts/recommendations/retrieval_index.pkl`
 
-Meaning:
-- `metrics.json` stores basic training and retrieval stats
-- `retrieval_index.pkl` stores the vectorizer and the corpus used for retrieval
+### Runtime Use
+The runtime retrieval index can now load `retrieval_index.pkl` and use it to:
+- adapt plan groups in the planner
+- add retrieved risk suggestions
+- reuse similar failure fixes in the recommendation layer
 
-## 3. Optional MLflow Logging
+## 3. Clarification Dataset Foundation
 
-If `mlflow` is installed, both training scripts also log:
-- run parameters
+### Purpose
+Clarification data captures the cases where the system should ask questions before building a final plan.
+
+### Dataset
+- `data/training/clarifications.jsonl`
+
+This dataset documents:
+- the original request
+- which fields were missing
+- which questions should be asked
+- example answers
+- resolved intent and entities
+
+### Current Use
+This dataset is not yet directly consumed by a dedicated model. It currently acts as:
+- a curation guide
+- a regression reference
+- a future training foundation for a smarter clarification policy
+
+## 4. Optional MLflow Logging
+
+If `mlflow` is installed, both training scripts log:
+- parameters
 - metrics
 - artifacts
 
-You may see generated MLflow content under:
+Local MLflow runs may appear under:
 - `mlruns/`
 
-This helps track experiments across multiple training runs.
+## 5. Runtime Input And Output Flow
 
-## 4. Where the Runtime Input Comes From
-
-At API runtime, the planner receives input from:
+### Runtime input
+The API receives:
 - `POST /plans/from-text`
 - `POST /plans/from-voice`
+- `POST /plans/sessions/{session_id}/answer`
 
-Flow:
-1. user sends text or audio
-2. audio is converted to text if needed
-3. intent is predicted
-4. entities are extracted
-5. a structured deployment plan is generated
-6. the plan is returned as JSON
-7. recommendations can be requested for that plan
+### Runtime output
+The planner can now return either:
+- a final `DeploymentPlan`
+- or a clarification response with questions and a `session_id`
 
-Relevant runtime flow lives in:
-- `src/api/routes/plans.py`
+Generated plans are still stored in memory in the current version.
 
-## 5. Where Runtime Output Goes
+## 6. How The New Runtime Uses Training Results
 
-### API output
-Generated plan responses are returned directly from the API and stored in the in-memory store while the API process is running.
+The current version now reuses training artifacts in two ways:
 
-Current in-memory storage:
-- plans are not persisted to a database yet
-- restarting the server clears the saved plans
+### Intent artifact reuse
+- runtime loads `artifacts/intent/model.pkl` if present
+- otherwise it falls back to heuristic prediction
 
-### Demo script output
-When running `sh ./quick_run.sh`, generated runtime output is saved to:
-- `outputs/plan_response.json`
-- `outputs/plan_saved.json`
-- `outputs/recommendations.json`
-- `outputs/server.log`
+### Retrieval artifact reuse
+- runtime loads `artifacts/recommendations/retrieval_index.pkl` if present
+- retrieved plan examples can shape group selection
+- retrieved failure examples can improve remediation suggestions
 
-### Training output
-Training artifacts are written to:
-- `artifacts/intent/`
-- `artifacts/recommendations/`
-
-## 6. How the Current API Uses Training Results
-
-Important current limitation:
-- the training scripts produce artifacts on disk
-- the runtime API does not yet automatically reload those artifacts on startup
-
-Today this means:
-- training validates the ML pipeline
-- artifacts are created and available for reuse
-- the API currently still uses the in-process classifier object and deterministic planning logic
-
-So the training is useful, but the model-loading loop is not fully connected yet.
-
-## 7. How Training Helps Improve the Planner
-
-Even in the current form, more training data helps shape a stronger system.
+## 7. How Training Improves Dynamic Planning
 
 ### Better intent detection
-More intent examples improve the system's ability to recognize:
-- new wording styles
-- short or ambiguous requests
-- enterprise-specific deployment language
+More labeled intent rows help the system:
+- recognize more wording styles
+- reduce wrong intent guesses
+- detect ambiguity more reliably
 
-### Better recommendations
-More plan and failure data improve:
-- failure matching
-- suggestion quality
-- next-step recommendations
-- safe remediation guidance
+### Better clarification behavior
+More clarification examples help define:
+- when to ask questions
+- which fields are essential
+- how to recover from partially specified requests
 
-### Better deployment plans
-As the datasets grow, the system can become better at:
-- identifying risks
-- proposing more useful prechecks
-- improving rollback suggestions
-- producing more realistic grouped task flows
+### Better plan strategies
+More plan examples help the system:
+- choose better group layouts
+- carry forward known risks
+- handle rollout-specific strategies more realistically
 
-## 8. Short Code and Flow Logic
+### Better remediation
+More failure examples improve:
+- fix suggestions
+- fallback guidance
+- execution-time recommendations
 
-### Runtime planning flow
-1. User submits text or voice
-2. Voice is transcribed if needed
-3. Intent classifier predicts the request type
-4. Entity parser extracts things like environment, platform, region, cluster size, monitoring, backup, and compliance
-5. Plan generator builds:
-   - plan metadata
-   - groups
-   - tasks
-   - dependencies
-   - prechecks
-   - rollback steps
-   - recommended actions
-6. Plan is returned as JSON
-7. Recommendation engine can enrich results, especially after a simulated failure
+## 8. Best Practices For Building Good Datasets
 
-### Recommendation flow
-The recommendation layer:
-- starts with recommendations already attached to the plan
-- adds remediation suggestions if execution fails
-- pulls related troubleshooting guidance from the knowledge base
-- adds risk-based actions for high-risk plans
+Good datasets should include:
+- clear requests
+- ambiguous requests
+- incomplete requests
+- corrected user answers after clarification
+- production, staging, DR, rollback, and compliance scenarios
+- successful and failed execution cases
 
-## 9. Current State vs Future Improvements
+Recommended dataset qualities:
+- consistent labels
+- realistic enterprise language
+- enough variety in wording
+- clear mapping from request to structured plan outcome
 
-### Current state
-- working training scripts
-- working output artifacts
-- working API flow
-- deterministic plan generation
-- baseline ML/retrieval experiments
+## 9. Short Flow Logic
 
-### Recommended next improvements
-- persist trained models to a reusable format
-- load trained artifacts during API startup
-- save plans and execution results in SQLite instead of memory
-- expand the training datasets
-- move from baseline TF-IDF models to richer embedding or transformer-based models
+1. user submits text or voice
+2. runtime predicts intent and extracts entities
+3. if confidence is low or important fields are missing, the system asks clarification questions
+4. once enough data is available, the planner retrieves similar plan examples
+5. the planner builds a structured plan using retrieved strategy plus safe fallback templates
+6. dependency validation checks the final task graph
+7. recommendations add known risks and failure guidance
 
 ## 10. Practical Summary
 
 Short version:
-- input training data lives in `data/training/`
+- training data lives in `data/training/`
 - training scripts live in `training/`
-- training output is saved in `artifacts/`
-- runtime output is returned by the API and optionally saved in `outputs/`
-- current training improves the project structure and future model quality, but automatic artifact reuse in the API is still the next step
+- trained outputs are saved in `artifacts/`
+- runtime now reuses saved intent and retrieval artifacts when available
+- clarification examples are part of the dataset foundation for future learning

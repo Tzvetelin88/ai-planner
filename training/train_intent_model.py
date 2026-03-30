@@ -30,6 +30,15 @@ def main() -> None:
 
     classifier = IntentClassifier()
     metrics = classifier.train(args.dataset)
+    clarification_ready_rows = 0
+    with args.dataset.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                record = json.loads(line)
+                if record.get("needs_clarification"):
+                    clarification_ready_rows += 1
+    metrics["clarification_ready_rows"] = float(clarification_ready_rows)
+    classifier.export_artifact(args.output_dir / "model.pkl")
     classifier.export_metadata(args.output_dir / "metadata.json")
 
     summary_path = args.output_dir / "metrics.json"
@@ -41,6 +50,7 @@ def main() -> None:
             mlflow.log_param("model_type", "tfidf_logistic_regression")
             mlflow.log_metrics(metrics)
             mlflow.log_artifact(str(summary_path))
+            mlflow.log_artifact(str(args.output_dir / "model.pkl"))
             mlflow.log_artifact(str(args.output_dir / "metadata.json"))
 
     print(json.dumps(metrics, indent=2))

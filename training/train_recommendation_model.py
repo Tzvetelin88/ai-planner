@@ -42,7 +42,9 @@ def main() -> None:
 
     plan_records = _load_jsonl(args.plans)
     failure_records = _load_jsonl(args.failures)
-    corpus = [record["prompt"] for record in plan_records] + [record["issue"] for record in failure_records]
+    documents = [{"type": "plan", "text": record["prompt"], "record": record} for record in plan_records]
+    documents.extend({"type": "failure", "text": record["issue"], "record": record} for record in failure_records)
+    corpus = [document["text"] for document in documents]
 
     vectorizer = TfidfVectorizer(ngram_range=(1, 2))
     matrix = vectorizer.fit_transform(corpus)
@@ -54,11 +56,12 @@ def main() -> None:
         "plan_records": float(len(plan_records)),
         "failure_records": float(len(failure_records)),
         "self_retrieval_at_1": self_retrieval,
+        "clarification_ready_records": float(sum(1 for record in plan_records if record.get("clarification_hints"))),
     }
 
     artifact_path = args.output_dir / "retrieval_index.pkl"
     with artifact_path.open("wb") as handle:
-        pickle.dump({"vectorizer": vectorizer, "corpus": corpus}, handle)
+        pickle.dump({"vectorizer": vectorizer, "documents": documents}, handle)
 
     metrics_path = args.output_dir / "metrics.json"
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")

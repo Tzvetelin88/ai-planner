@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from src.models.schemas import DeploymentPlan, MockExecutionResponse
+from src.models.schemas import DeploymentPlan, MockExecutionResponse, PlanningSession
 
 
 @dataclass
 class PlannerStore:
     plans: dict[str, DeploymentPlan] = field(default_factory=dict)
     execution_results: dict[str, list[MockExecutionResponse]] = field(default_factory=dict)
+    sessions: dict[str, PlanningSession] = field(default_factory=dict)
 
     def save_plan(self, plan: DeploymentPlan) -> DeploymentPlan:
         self.plans[plan.plan_metadata.plan_id] = plan
@@ -22,6 +23,13 @@ class PlannerStore:
 
     def get_execution_results(self, plan_id: str) -> list[MockExecutionResponse]:
         return self.execution_results.get(plan_id, [])
+
+    def save_session(self, session: PlanningSession) -> PlanningSession:
+        self.sessions[session.session_id] = session
+        return session
+
+    def get_session(self, session_id: str) -> PlanningSession | None:
+        return self.sessions.get(session_id)
 
 
 store = PlannerStore()

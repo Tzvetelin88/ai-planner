@@ -1,6 +1,6 @@
 [project]
 name = "ai-deployment-planner"
-version = "0.1.0"
+version = "0.2.0"
 description = "Experimental voice and text driven deployment flow planner"
 readme = "README.md"
 requires-python = ">=3.11"

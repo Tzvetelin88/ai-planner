@@ -9,8 +9,8 @@ from src.api.routes.plans import router as plans_router
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AI Deployment Planner",
-        description="Experimental API for voice and text driven deployment plan generation.",
-        version="0.1.0",
+        description="Hybrid API for voice and text driven deployment plan generation with clarification flows.",
+        version="0.2.0",
     )
 
     @app.get("/health")
