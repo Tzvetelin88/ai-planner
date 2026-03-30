@@ -1,13 +1,25 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Union
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from src.api.store import store
-from src.models.schemas import DeploymentPlan, PlanRequest, RecommendationRequest, RecommendationResponse
+from src.models.schemas import (
+    ClarificationResponse,
+    DeploymentPlan,
+    PlanRequest,
+    RecommendationRequest,
+    RecommendationResponse,
+    SessionAnswerRequest,
+)
 from src.nlp.entity_parser import EntityParser
 from src.nlp.intent_model import IntentClassifier
 from src.planner.plan_generator import PlanGenerator
+from src.planner.planning_service import PlanningService
 from src.recommendations.recommendation_engine import RecommendationEngine
+from src.recommendations.retrieval_index import RetrievalIndex
 
 try:
     from src.asr.transcribe import SpeechTranscriber
@@ -17,32 +29,44 @@ except ImportError:  # pragma: no cover
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
+retrieval_index = RetrievalIndex()
 entity_parser = EntityParser()
 intent_classifier = IntentClassifier()
-plan_generator = PlanGenerator()
-recommendation_engine = RecommendationEngine()
+intent_classifier.load_artifact(Path("artifacts/intent/model.pkl"))
+plan_generator = PlanGenerator(retrieval_index=retrieval_index)
+recommendation_engine = RecommendationEngine(retrieval_index=retrieval_index)
+planning_service = PlanningService(
+    store=store,
+    entity_parser=entity_parser,
+    intent_classifier=intent_classifier,
+    plan_generator=plan_generator,
+)
 
 
-@router.post("/from-text", response_model=DeploymentPlan)
-def create_plan_from_text(request: PlanRequest) -> DeploymentPlan:
-    intent = intent_classifier.predict(request.text)
-    entities = entity_parser.parse(request.text)
-    plan = plan_generator.generate(text=request.text, source=request.source, intent=intent, entities=entities)
-    return store.save_plan(plan)
+@router.post("/from-text", response_model=Union[DeploymentPlan, ClarificationResponse])
+def create_plan_from_text(request: PlanRequest) -> DeploymentPlan | ClarificationResponse:
+    return planning_service.create_plan_or_clarification(request)
 
 
-@router.post("/from-voice", response_model=DeploymentPlan)
-async def create_plan_from_voice(audio: UploadFile = File(...)) -> DeploymentPlan:
+@router.post("/from-voice", response_model=Union[DeploymentPlan, ClarificationResponse])
+async def create_plan_from_voice(audio: UploadFile = File(...)) -> DeploymentPlan | ClarificationResponse:
     if SpeechTranscriber is None:
         raise HTTPException(status_code=500, detail="Speech transcription module is unavailable.")
 
     transcriber = SpeechTranscriber()
     audio_bytes = await audio.read()
     transcript = transcriber.transcribe_bytes(audio_bytes, audio.filename or "upload.wav")
-    intent = intent_classifier.predict(transcript)
-    entities = entity_parser.parse(transcript)
-    plan = plan_generator.generate(text=transcript, source="voice", intent=intent, entities=entities)
-    return store.save_plan(plan)
+    return planning_service.create_plan_or_clarification(
+        PlanRequest(text=transcript, source="voice", allow_clarification=True)
+    )
+
+
+@router.post("/sessions/{session_id}/answer", response_model=Union[DeploymentPlan, ClarificationResponse])
+def answer_clarification(session_id: str, request: SessionAnswerRequest) -> DeploymentPlan | ClarificationResponse:
+    result = planning_service.continue_session(session_id, request)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Planning session not found")
+    return result
 
 
 @router.get("/{plan_id}", response_model=DeploymentPlan)

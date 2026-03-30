@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, computed_field
@@ -55,6 +56,7 @@ class PlanRequest(BaseModel):
     text: str = Field(min_length=3)
     source: str = "text"
     user_id: str | None = None
+    allow_clarification: bool = True
 
 
 class IntentPrediction(BaseModel):
@@ -67,7 +69,7 @@ class PlanMetadata(BaseModel):
     plan_id: str = Field(default_factory=lambda: f"plan-{uuid4().hex[:12]}")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source: str = "text"
-    generator_version: str = "0.1.0"
+    generator_version: str = "0.2.0"
 
 
 class Precheck(BaseModel):
@@ -111,6 +113,14 @@ class RecommendedAction(BaseModel):
     priority: str = "medium"
 
 
+class RetrievedPlanExample(BaseModel):
+    prompt: str
+    plan_summary: str
+    groups: list[str]
+    known_risks: list[str] = Field(default_factory=list)
+    similarity_score: float = Field(default=0.0, ge=0.0)
+
+
 class DeploymentPlan(BaseModel):
     plan_metadata: PlanMetadata
     intent: IntentPrediction
@@ -125,6 +135,8 @@ class DeploymentPlan(BaseModel):
     estimated_duration: int = Field(ge=1)
     risk_level: RiskLevel
     recommended_actions: list[RecommendedAction]
+    strategy_source: str = "template"
+    strategy_examples: list[RetrievedPlanExample] = Field(default_factory=list)
 
     @computed_field
     @property
@@ -162,10 +174,56 @@ class RecommendationResponse(BaseModel):
     actions: list[RecommendedAction]
 
 
+class ClarificationOption(BaseModel):
+    value: str
+    label: str
+
+
+class ClarificationQuestion(BaseModel):
+    id: str
+    field_name: str
+    prompt: str
+    required: bool = True
+    options: list[ClarificationOption] = Field(default_factory=list)
+
+
+class ClarificationResponse(BaseModel):
+    status: Literal["needs_clarification"] = "needs_clarification"
+    session_id: str
+    message: str
+    intent: IntentPrediction
+    known_entities: DeploymentEntities
+    missing_fields: list[str]
+    questions: list[ClarificationQuestion]
+
+
+class SessionAnswer(BaseModel):
+    question_id: str
+    answer: str
+
+
+class SessionAnswerRequest(BaseModel):
+    answers: list[SessionAnswer]
+
+
+class PlanningSession(BaseModel):
+    session_id: str = Field(default_factory=lambda: f"session-{uuid4().hex[:12]}")
+    original_text: str
+    source: str = "text"
+    intent: IntentPrediction
+    entities: DeploymentEntities
+    missing_fields: list[str] = Field(default_factory=list)
+    questions: list[ClarificationQuestion] = Field(default_factory=list)
+    answers: dict[str, Any] = Field(default_factory=dict)
+
+
 class IntentTrainingSample(BaseModel):
     text: str
     intent: IntentType
     entities: DeploymentEntities | None = None
+    needs_clarification: bool = False
+    ambiguity_tags: list[str] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
 
 
 class PlanTrainingSample(BaseModel):
@@ -173,6 +231,9 @@ class PlanTrainingSample(BaseModel):
     plan_summary: str
     groups: list[str]
     known_risks: list[str] = Field(default_factory=list)
+    rollout_strategy: str | None = None
+    dependency_pattern: str | None = None
+    clarification_hints: list[str] = Field(default_factory=list)
 
 
 class FailureTrainingSample(BaseModel):
@@ -180,3 +241,5 @@ class FailureTrainingSample(BaseModel):
     root_cause: str
     fix: str
     follow_up: str
+    remediation_category: str | None = None
+    plan_context: str | None = None

@@ -7,6 +7,10 @@ If someone wants to see the project working quickly, they can:
 2. run one sample request
 3. inspect the returned JSON
 
+The current version can return either:
+- a final plan
+- or a clarification response that includes a `session_id` and questions
+
 ## 1. Start the API
 
 ```bash
@@ -260,7 +264,7 @@ Example response:
 
 ## Important Note
 
-This sample currently returns `rollback_plan` as the detected intent because the sentence includes the word `rollback`.
+Earlier versions could misread similar prompts when deployment and rollback language were mixed together.
 
 If you want a cleaner deployment-plan example, use:
 
@@ -276,6 +280,20 @@ That should more naturally map to:
 - staging
 - monitoring
 - backup
+
+## Clarification Example
+
+If you want to test the new hybrid behavior, use:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/plans/from-text" \
+  -H "Content-Type: application/json" \
+  -d "{\"text\":\"Create a production Kubernetes deployment plan with backup and monitoring.\",\"source\":\"text\"}"
+```
+
+This may return a clarification response asking for:
+- cluster size
+- rollback expectations
 
 ## Windows PowerShell Version
 

@@ -9,27 +9,42 @@ from src.models.schemas import (
     PlanTask,
     Precheck,
     RecommendedAction,
+    RetrievedPlanExample,
     RiskLevel,
     RollbackStep,
     TaskDependency,
     TaskGroup,
 )
 from src.planner.dependency_graph import topological_task_ids, validate_dependencies
+from src.recommendations.retrieval_index import RetrievalIndex
 
 
 class PlanGenerator:
+    GROUP_LIBRARY = {
+        "pre_validation": ("Pre-Validation", "Validate capacity, access, and constraints."),
+        "infrastructure_setup": ("Infrastructure Setup", "Prepare the target infrastructure or runtime."),
+        "platform_configuration": ("Platform Configuration", "Configure the requested platform and integrations."),
+        "security_and_backup": ("Security and Backup", "Apply protection, backup, and audit controls."),
+        "verification": ("Verification", "Run validation, health checks, and sign-off."),
+        "rollback": ("Rollback", "Define safe recovery steps if execution fails."),
+    }
+
+    def __init__(self, retrieval_index: RetrievalIndex | None = None) -> None:
+        self.retrieval_index = retrieval_index or RetrievalIndex()
+
     def generate(self, *, text: str, source: str, intent: IntentPrediction, entities: DeploymentEntities) -> DeploymentPlan:
-        groups = self._build_groups(intent.intent)
+        strategy_examples = self._retrieve_strategy_examples(text)
+        groups = self._build_groups(intent.intent, entities, strategy_examples)
         tasks = self._build_tasks(groups, intent.intent, entities)
         dependencies = self._build_dependencies(tasks)
         validate_dependencies(tasks, dependencies)
 
         estimated_duration = sum(task.estimated_minutes for task in tasks)
         risk_level = self._assess_risk(entities)
-        summary = self._build_summary(intent, entities)
+        summary = self._build_summary(intent, entities, groups)
         prechecks = self._build_prechecks(entities)
         rollback_plan = self._build_rollback_steps(entities)
-        recommendations = self._build_recommendations(entities, intent.intent)
+        recommendations = self._build_recommendations(entities, intent.intent, strategy_examples)
         ordering = topological_task_ids(tasks, dependencies)
 
         recommendations.insert(
@@ -55,23 +70,46 @@ class PlanGenerator:
             estimated_duration=estimated_duration,
             risk_level=risk_level,
             recommended_actions=recommendations,
+            strategy_source="retrieval_hybrid" if strategy_examples else "template",
+            strategy_examples=strategy_examples,
         )
 
-    def _build_groups(self, intent: IntentType) -> list[TaskGroup]:
-        group_defs = [
-            ("pre_validation", "Pre-Validation", "Validate capacity, access, and constraints."),
-            ("infrastructure_setup", "Infrastructure Setup", "Prepare the target infrastructure or runtime."),
-            ("platform_configuration", "Platform Configuration", "Configure the requested platform and integrations."),
-            ("security_and_backup", "Security and Backup", "Apply protection, backup, and audit controls."),
-            ("verification", "Verification", "Run validation, health checks, and sign-off."),
-            ("rollback", "Rollback", "Define safe recovery steps if execution fails."),
-        ]
-        if intent == IntentType.VALIDATION_HEALTH_CHECK_PLAN:
-            group_defs = [
-                ("pre_validation", "Pre-Validation", "Confirm environment and monitoring coverage."),
-                ("verification", "Verification", "Run validation and health-check actions."),
-                ("rollback", "Rollback", "Restore previous known-good configuration if needed."),
-            ]
+    def _build_groups(
+        self,
+        intent: IntentType,
+        entities: DeploymentEntities,
+        strategy_examples: list[RetrievedPlanExample],
+    ) -> list[TaskGroup]:
+        if strategy_examples:
+            group_ids = list(strategy_examples[0].groups)
+        elif intent == IntentType.VALIDATION_HEALTH_CHECK_PLAN:
+            group_ids = ["pre_validation", "verification", "rollback"]
+        else:
+            group_ids = list(self.GROUP_LIBRARY)
+
+        if entities.backup_enabled and "security_and_backup" not in group_ids:
+            group_ids.append("security_and_backup")
+        if intent in {IntentType.DISASTER_RECOVERY_PLAN, IntentType.ROLLBACK_PLAN} and "rollback" not in group_ids:
+            group_ids.append("rollback")
+        if "verification" not in group_ids:
+            group_ids.append("verification")
+        if "pre_validation" not in group_ids:
+            group_ids.insert(0, "pre_validation")
+
+        if intent == IntentType.ROLLBACK_PLAN:
+            prioritized = ["pre_validation", "rollback", "verification"]
+            group_ids = [group_id for group_id in prioritized if group_id in group_ids]
+
+        group_ids = list(dict.fromkeys(group_ids))
+        group_defs: list[tuple[str, str, str]] = []
+        for group_id in group_ids:
+            title, summary = self.GROUP_LIBRARY[group_id]
+            if intent == IntentType.VALIDATION_HEALTH_CHECK_PLAN and group_id == "pre_validation":
+                summary = "Confirm environment and monitoring coverage."
+            if intent == IntentType.VALIDATION_HEALTH_CHECK_PLAN and group_id == "verification":
+                summary = "Run validation and health-check actions."
+            group_defs.append((group_id, title, summary))
+
         return [
             TaskGroup(id=group_id, title=title, summary=summary, order=index)
             for index, (group_id, title, summary) in enumerate(group_defs, start=1)
@@ -236,6 +274,7 @@ class PlanGenerator:
         self,
         entities: DeploymentEntities,
         intent: IntentType,
+        strategy_examples: list[RetrievedPlanExample],
     ) -> list[RecommendedAction]:
         actions = [
             RecommendedAction(
@@ -268,12 +307,27 @@ class PlanGenerator:
                     priority="high",
                 )
             )
+        for example in strategy_examples:
+            for risk in example.known_risks[:2]:
+                actions.append(
+                    RecommendedAction(
+                        title="Review retrieved plan risk",
+                        reason=f"Similar plan `{example.prompt}` highlights risk `{risk}`.",
+                        priority="medium",
+                    )
+                )
         return actions
 
-    def _build_summary(self, intent: IntentPrediction, entities: DeploymentEntities) -> str:
+    def _build_summary(
+        self,
+        intent: IntentPrediction,
+        entities: DeploymentEntities,
+        groups: list[TaskGroup],
+    ) -> str:
         return (
             f"Create a {intent.intent.value} workflow for the {entities.environment.value} environment "
-            f"on {entities.target_platform} with {entities.cluster_size} node(s)."
+            f"on {entities.target_platform} with {entities.cluster_size} node(s) across "
+            f"{len(groups)} group(s)."
         )
 
     def _assess_risk(self, entities: DeploymentEntities) -> RiskLevel:
@@ -282,3 +336,20 @@ class PlanGenerator:
         if entities.backup_enabled or entities.monitoring_enabled or entities.cluster_size > 3:
             return RiskLevel.MEDIUM
         return RiskLevel.LOW
+
+    def _retrieve_strategy_examples(self, text: str) -> list[RetrievedPlanExample]:
+        examples: list[RetrievedPlanExample] = []
+        for match in self.retrieval_index.retrieve_plan_examples(text, limit=2):
+            record = match.get("record", {})
+            if not record:
+                continue
+            examples.append(
+                RetrievedPlanExample(
+                    prompt=record.get("prompt", match["text"]),
+                    plan_summary=record.get("plan_summary", "Retrieved similar plan."),
+                    groups=record.get("groups", []),
+                    known_risks=record.get("known_risks", []),
+                    similarity_score=match.get("score", 0.0),
+                )
+            )
+        return examples
