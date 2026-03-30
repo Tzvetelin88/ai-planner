@@ -6,12 +6,18 @@ from src.models.schemas import (
     RecommendedAction,
     RecommendationResponse,
 )
+from src.recommendations.retrieval_index import RetrievalIndex
 from src.recommendations.troubleshooting_retriever import TroubleshootingRetriever
 
 
 class RecommendationEngine:
-    def __init__(self, retriever: TroubleshootingRetriever | None = None) -> None:
+    def __init__(
+        self,
+        retriever: TroubleshootingRetriever | None = None,
+        retrieval_index: RetrievalIndex | None = None,
+    ) -> None:
         self.retriever = retriever or TroubleshootingRetriever()
+        self.retrieval_index = retrieval_index or RetrievalIndex()
 
     def recommend(
         self,
@@ -35,6 +41,18 @@ class RecommendationEngine:
                         title="Review troubleshooting guidance",
                         reason=section.splitlines()[0],
                         priority="medium",
+                    )
+                )
+            for match in self.retrieval_index.retrieve_failure_examples(
+                " ".join(execution_result.dependency_issues + execution_result.remediation_suggestions),
+                limit=2,
+            ):
+                record = match.get("record", {})
+                actions.append(
+                    RecommendedAction(
+                        title="Reuse learned remediation pattern",
+                        reason=record.get("fix", record.get("text", "Review a similar historical failure case.")),
+                        priority="high",
                     )
                 )
 

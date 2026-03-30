@@ -7,6 +7,7 @@ These samples are based on what the project supports today:
 - voice input after speech-to-text
 - intent detection
 - entity extraction
+- clarification questions for missing or ambiguous details
 - grouped deployment plans
 - recommendations and troubleshooting support
 
@@ -36,10 +37,10 @@ The system will transcribe the audio, then use the same planning logic as text m
 ## Sample 1: Kubernetes Staging Deployment
 
 ### Text prompt
-`Create a staging deployment plan for a 3-node Kubernetes cluster with monitoring, backup, and rollback.`
+`Create a staging deployment plan for a 3-node Kubernetes cluster with monitoring and backup.`
 
 ### Voice example
-`Create a staging deployment plan for a three node Kubernetes cluster with monitoring, backup, and rollback.`
+`Create a staging deployment plan for a three node Kubernetes cluster with monitoring and backup.`
 
 ### What this should trigger
 - intent: `create_deployment_plan`
@@ -208,14 +209,14 @@ If you want fast demo-ready examples, use these:
 
 ## Current Limitations
 
-The current system does not yet generate completely free-form custom groups and tasks from arbitrary requests.
+The current system is now more dynamic, but it still does not generate completely free-form custom groups and tasks from arbitrary requests.
 
 Right now it works best when:
 - the request includes supported keywords
 - the platform and environment are stated clearly
 - the request maps to one of the supported planning intents
 
-The planner then fills in a structured plan using the current built-in group and task templates.
+The planner adapts group strategy from retrieved examples when possible, asks clarification questions when needed, and then fills in a structured plan using safe built-in task templates.
 
 ## Best Prompt Style
 

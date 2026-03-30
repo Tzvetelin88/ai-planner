@@ -1,215 +1,32 @@
 # AI Deployment Planner
 
-Experimental voice/text-driven deployment flow and execution plan creator.
+Hybrid voice and text driven deployment flow planner with clarification questions, adaptive plan shaping, and structured execution output.
 
 ## Overview
-`AI Deployment Planner` is a Python-based project that translates user requests into a structured execution plan. A user can describe what they want by text or voice, and the system turns that intent into a machine-readable JSON plan with grouped tasks, dependencies, validation steps, and rollback actions.
-
-The project is designed as a portfolio-ready AI system that combines:
-- voice or text input
+`AI Deployment Planner` converts voice or text requests into structured deployment plans. The current version combines:
+- text or voice input
 - intent recognition
 - entity extraction
-- plan generation
+- clarification questions when important details are missing or ambiguous
+- adaptive plan shaping from retrieved example plans
 - mocked internal execution APIs
 - recommendations for next steps, risk reduction, and failure recovery
 
-## Main Idea
-Instead of manually defining deployment steps, the user can say something like:
+## How It Works
+1. the user sends text or voice
+2. voice is transcribed if needed
+3. the system predicts intent and extracts entities
+4. if the request is ambiguous or incomplete, the API returns clarification questions
+5. after answers are provided, the planner builds a structured JSON plan
+6. similar historical plan examples can influence the final group and task layout
+7. dependency validation ensures the returned plan is consistent
 
-> Create a staging deployment plan for a 3-node cluster with monitoring, backup, and rollback checks.
-
-The system should:
-1. convert voice to text if needed
-2. identify the user intent
-3. extract key deployment parameters
-4. generate a structured execution plan
-5. simulate downstream provisioning APIs
-6. provide recommendations, warnings, and possible fixes
-
-## Project Goals
-- Build an AI-assisted planner for deployment and configuration workflows.
-- Support both voice and text interactions.
-- Generate clean JSON plans separated into groups and tasks.
-- Simulate execution through mocked internal APIs.
-- Train models that improve intent detection and recommendations over time.
-- Provide troubleshooting and remediation guidance for failed execution steps.
-
-## Example Output
-The planner is expected to generate plan objects with sections such as:
-- `plan_metadata`
-- `intent`
-- `summary`
-- `groups`
-- `tasks`
-- `dependencies`
-- `prechecks`
-- `rollback_plan`
-- `risk_level`
-- `recommended_actions`
-
-## Example Use Cases
-### 1. New environment deployment
-Create a full deployment plan for a new staging or production environment.
-
-### 2. Disaster recovery planning
-Generate failover, validation, backup, and rollback actions for DR scenarios.
-
-### 3. Configuration rollout planning
-Build phased rollout plans for configuration updates with validation gates.
-
-### 4. Failure remediation guidance
-Recommend likely fixes when provisioning or validation steps fail.
-
-### 5. Compliance-aware deployment preparation
-Add security, auditing, encryption, and operational checks to regulated workloads.
-
-## Experimental Workflow
-```text
-Voice/Text Input
-    -> Speech-to-Text (if voice)
-    -> Intent Recognition
-    -> Entity Extraction
-    -> Plan Generator
-    -> Structured JSON Plan
-    -> Mock Execution APIs
-    -> Recommendation and Fix Engine
-```
-
-## Planned Architecture
-- `FastAPI` backend for APIs and mock services
-- `PyTorch` and NLP libraries for intent understanding
-- `Pydantic` schemas for strict plan JSON validation
-- `NetworkX` for task dependency flow modeling
-- retrieval-based recommendation layer for fixes and suggestions
-- local storage for requests, plans, outcomes, and feedback
-
-## Planned Repository Areas
-- `src/api/` - API entrypoints and routes
-- `src/asr/` - voice transcription
-- `src/nlp/` - intent and entity understanding
-- `src/planner/` - plan generation and dependency logic
-- `src/recommendations/` - recommendations and troubleshooting
-- `training/` - model training scripts
-- `data/` - datasets and knowledge assets
-- `tests/` - API and planner tests
-
-## Current Status
-The repository now contains a working project skeleton with:
-- a FastAPI application
-- a deterministic plan generator
-- mock execution APIs
-- voice transcription hooks
-- seed training datasets
-- baseline training scripts
-- focused API tests
-
-## Quick Start
-Install dependencies:
-
-# AI Deployment Planner
-
-Experimental voice/text-driven deployment flow and execution plan creator.
-
-## Overview
-`AI Deployment Planner` is a Python-based project that translates user requests into a structured execution plan. A user can describe what they want by text or voice, and the system turns that intent into a machine-readable JSON plan with grouped tasks, dependencies, validation steps, and rollback actions.
-
-The project is designed as a portfolio-ready AI system that combines:
-- voice or text input
-- intent recognition
-- entity extraction
-- plan generation
-- mocked internal execution APIs
-- recommendations for next steps, risk reduction, and failure recovery
-
-## Main Idea
-Instead of manually defining deployment steps, the user can say something like:
-
-> Create a staging deployment plan for a 3-node cluster with monitoring, backup, and rollback checks.
-
-The system should:
-1. convert voice to text if needed
-2. identify the user intent
-3. extract key deployment parameters
-4. generate a structured execution plan
-5. simulate downstream provisioning APIs
-6. provide recommendations, warnings, and possible fixes
-
-## Project Goals
-- Build an AI-assisted planner for deployment and configuration workflows.
-- Support both voice and text interactions.
-- Generate clean JSON plans separated into groups and tasks.
-- Simulate execution through mocked internal APIs.
-- Train models that improve intent detection and recommendations over time.
-- Provide troubleshooting and remediation guidance for failed execution steps.
-
-## Example Output
-The planner is expected to generate plan objects with sections such as:
-- `plan_metadata`
-- `intent`
-- `summary`
-- `groups`
-- `tasks`
-- `dependencies`
-- `prechecks`
-- `rollback_plan`
-- `risk_level`
-- `recommended_actions`
-
-## Example Use Cases
-### 1. New environment deployment
-Create a full deployment plan for a new staging or production environment.
-
-### 2. Disaster recovery planning
-Generate failover, validation, backup, and rollback actions for DR scenarios.
-
-### 3. Configuration rollout planning
-Build phased rollout plans for configuration updates with validation gates.
-
-### 4. Failure remediation guidance
-Recommend likely fixes when provisioning or validation steps fail.
-
-### 5. Compliance-aware deployment preparation
-Add security, auditing, encryption, and operational checks to regulated workloads.
-
-## Experimental Workflow
-```text
-Voice/Text Input
-    -> Speech-to-Text (if voice)
-    -> Intent Recognition
-    -> Entity Extraction
-    -> Plan Generator
-    -> Structured JSON Plan
-    -> Mock Execution APIs
-    -> Recommendation and Fix Engine
-```
-
-## Planned Architecture
-- `FastAPI` backend for APIs and mock services
-- `PyTorch` and NLP libraries for intent understanding
-- `Pydantic` schemas for strict plan JSON validation
-- `NetworkX` for task dependency flow modeling
-- retrieval-based recommendation layer for fixes and suggestions
-- local storage for requests, plans, outcomes, and feedback
-
-## Planned Repository Areas
-- `src/api/` - API entrypoints and routes
-- `src/asr/` - voice transcription
-- `src/nlp/` - intent and entity understanding
-- `src/planner/` - plan generation and dependency logic
-- `src/recommendations/` - recommendations and troubleshooting
-- `training/` - model training scripts
-- `data/` - datasets and knowledge assets
-- `tests/` - API and planner tests
-
-## Current Status
-The repository now contains a working project skeleton with:
-- a FastAPI application
-- a deterministic plan generator
-- mock execution APIs
-- voice transcription hooks
-- seed training datasets
-- baseline training scripts
-- focused API tests
+## Current Version
+Version `0.2.0` introduces a hybrid planning flow:
+- deterministic templates remain as a safe fallback
+- trained intent artifacts can be loaded at runtime
+- retrieval artifacts can shape plan strategies and recommendations
+- multi-turn clarification is supported through planning sessions
 
 ## Quick Start
 Install dependencies:
@@ -218,7 +35,7 @@ Install dependencies:
 pip install -e .[dev]
 ```
 
-Run the API:
+Start the API:
 
 ```bash
 uvicorn src.api.main:app --reload
@@ -230,28 +47,20 @@ Run tests:
 pytest
 ```
 
-Run baseline training:
+Run training:
 
 ```bash
 python training/train_intent_model.py
 python training/train_recommendation_model.py
 ```
 
-Quick demo run with Bash:
+Run the quick demo:
 
 ```bash
 sh ./quick_run.sh
 ```
 
-This script:
-- installs the minimal runtime dependencies
-- runs both baseline training scripts
-- starts the API locally
-- generates a sample deployment plan
-- fetches the saved plan and recommendations
-- stores output files under `outputs/`
-
-For voice input support, also install:
+For voice input support:
 
 ```bash
 pip install -e .[asr]
@@ -261,6 +70,7 @@ pip install -e .[asr]
 - `GET /health`
 - `POST /plans/from-text`
 - `POST /plans/from-voice`
+- `POST /plans/sessions/{session_id}/answer`
 - `GET /plans/{plan_id}`
 - `POST /plans/{plan_id}/recommendations`
 - `POST /mock/inventory/validate`
@@ -271,16 +81,32 @@ pip install -e .[asr]
 - `POST /mock/verify/health`
 - `POST /mock/rollback/start`
 
+## Response Modes
+`POST /plans/from-text` and `POST /plans/from-voice` can now return either:
+- a final `DeploymentPlan`
+- or a clarification response with `session_id`, `missing_fields`, and `questions`
+
+After answering the questions with `POST /plans/sessions/{session_id}/answer`, the system returns the final plan.
+
 ## Output Files
-When you run `sh ./quick_run.sh`, you will get:
-- `outputs/plan_response.json` - the initial generated plan returned by the API
-- `outputs/plan_saved.json` - the same plan fetched back from the in-memory store
-- `outputs/recommendations.json` - recommendation output for the generated plan
-- `outputs/server.log` - local API server logs
-- `artifacts/intent/metrics.json` - intent training metrics
-- `artifacts/intent/metadata.json` - exported intent model metadata
-- `artifacts/recommendations/metrics.json` - retrieval training metrics
-- `artifacts/recommendations/retrieval_index.pkl` - saved recommendation retrieval artifact
+When you run `sh ./quick_run.sh`, outputs are written to:
+- `outputs/plan_response.json`
+- `outputs/plan_saved.json`
+- `outputs/recommendations.json`
+- `outputs/server.log`
+- `artifacts/intent/metrics.json`
+- `artifacts/intent/metadata.json`
+- `artifacts/intent/model.pkl`
+- `artifacts/recommendations/metrics.json`
+- `artifacts/recommendations/retrieval_index.pkl`
+
+## Key Docs
+- `TECHNOLOGY.md` - stack summary
+- `TRAINING.md` - training and dataset flow
+- `SAMPLES.md` - basic supported prompts
+- `QUICK_SAMPLES.md` - fast copy-paste API tests
+- `ADVANCED_SAMPLES.md` - clarification and dynamic planning scenarios
+- `CHANGELOG.md` - version history and new behavior
 
 ## Why This Project Matters
-This project demonstrates practical AI engineering beyond a simple chatbot. It focuses on converting human intent into actionable operational workflows that can later integrate with provisioning, deployment, backup, and disaster recovery platforms.
+This project demonstrates practical AI engineering beyond a simple chatbot. It translates user intent into actionable operational workflows while adding safety through schema validation, dependency checks, clarification loops, and retrieval-guided planning.
